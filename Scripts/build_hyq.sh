@@ -30,6 +30,8 @@ cmake --build "$BUILD_DIR/build" -j"$(nproc)"
 
 echo "==> Installing to $INSTALL_BIN"
 mkdir -p "$(dirname "$INSTALL_BIN")"
-install -m755 "$BUILD_DIR/build/hyq" "$INSTALL_BIN"
+HYQ_BIN="$(find "$BUILD_DIR/build" -maxdepth 3 -type f -name hyq -executable | head -1)"
+[ -z "$HYQ_BIN" ] && { echo "❌ Built hyq binary not found under $BUILD_DIR/build"; exit 1; }
+install -m755 "$HYQ_BIN" "$INSTALL_BIN"
 
 echo "==> Done. $($INSTALL_BIN --version 2>/dev/null || echo 'hyq installed')"
