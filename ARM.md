@@ -1,6 +1,6 @@
 # HyDE on ARM (aarch64 / Raspberry Pi)
 
-This branch (`arm`) adapts HyDE for aarch64 Linux in general, and for **Raspberry Pi 5** specifically.
+This branch (`raspberry`) adapts HyDE for aarch64 Linux in general, and for **Raspberry Pi 5** specifically.
 
 Tested on: Raspberry Pi 5 (16 GB), Arch Linux ARM, kernel 6.x, Hyprland.
 
@@ -54,7 +54,7 @@ Aquamarine picks `card0` by default and dies with `Can't create renderer, no mat
 ## Setup on a Pi 5 (or any aarch64 box)
 
 ```bash
-git clone -b arm https://github.com/ente0/HyDE.git
+git clone -b raspberry https://github.com/ente0/HyDE.git
 cd HyDE
 ./Scripts/install.sh
 
