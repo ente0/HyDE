@@ -13,8 +13,11 @@ Tested on: Raspberry Pi 5 (16 GB), Arch Linux ARM, kernel 6.x, Hyprland.
 | `Configs/.local/bin/hyq` | Removed (no upstream aarch64 prebuilt). Build via `Scripts/build_hyq.sh`. |
 | `Scripts/build_hyq.sh` | New. Compiles hyq from source into `~/.local/bin/hyq`. |
 | `Scripts/hydevm/hydevm.sh` | Architecture-aware via `HYDEVM_ARCH` (defaults to `uname -m`). |
-| `Configs/.config/hypr/pi5.conf` | New. Pi 5 renderer env + lightweight decorations (no blur, no shadow, simple animations). |
+| `Configs/.config/uwsm/env-hyprland.d/01-pi5.sh` | New. Exports `AQ_DRM_DEVICES=/dev/dri/card1`, `WLR_NO_HARDWARE_CURSORS`, `WLR_DRM_NO_ATOMIC`, etc. *before* Hyprland starts. Gated on Broadcom V3D detection. |
+| `Configs/.config/hypr/pi5.conf` | New. Lightweight decorations (no blur, no shadow, simple animations). No `env =` — those don't work for renderer init. |
 | `Configs/.config/hypr/hyprland.conf` | Sources `pi5.conf`. |
+| `Scripts/firstrun_pi5.sh` | New. Idempotent installer: adds `dtoverlay`, joins `video`/`render` groups, deploys `01-pi5.sh` and `pi5.conf` into `~/.config/`. |
+| `Scripts/diag_pi5.sh` | New. One-shot diagnostic dump (DRM nodes, kernel modules, EGL probe, Hyprland env, top errors). |
 | `Configs/.config/zsh/user.zsh` | Unrelated bugfix — orphan `elif` left from upstream regression. |
 
 ## Raspberry Pi 5 specifics
@@ -26,7 +29,7 @@ Pi 5 exposes two DRM nodes:
 - `/dev/dri/card0` → VC4 (display controller, **no 3D**)
 - `/dev/dri/card1` → V3D (the actual GL ES renderer)
 
-Aquamarine picks `card0` by default and dies with `Can't create renderer, no matching devices found`. `pi5.conf` fixes this with `env = AQ_DRM_DEVICES,/dev/dri/card1`.
+Aquamarine picks `card0` by default and dies with `Can't create renderer, no matching devices found`. The fix is to export `AQ_DRM_DEVICES=/dev/dri/card1` **before Hyprland starts** — Hyprland's own `env =` directive runs *after* the renderer has already initialised and is therefore useless for this. We do it in [Configs/.config/uwsm/env-hyprland.d/01-pi5.sh](Configs/.config/uwsm/env-hyprland.d/01-pi5.sh), which uwsm sources before exec'ing Hyprland.
 
 ### What we disable on Pi 5
 
@@ -58,18 +61,21 @@ git clone -b raspberry https://github.com/ente0/HyDE.git
 cd HyDE
 ./Scripts/install.sh
 
+# Pi 5: install the renderer env, dtoverlay, group membership, etc.
+./Scripts/firstrun_pi5.sh
+
 # Build hyq from source — requires git cmake make gcc pkg-config
 ./Scripts/build_hyq.sh
+
+# Verify everything before logging into Hyprland
+./Scripts/diag_pi5.sh
 ```
 
-After install, reboot or `Hyprland` from TTY. If you still see the renderer error, double-check `/dev/dri/`:
+If `diag_pi5.sh` shows only `card0` under `/dev/dri/`, the V3D driver isn't loaded. Confirm `dtoverlay=vc4-kms-v3d` is in `/boot/firmware/config.txt` and reboot.
 
-```bash
-ls -la /dev/dri/
-# expect: card0 (vc4), card1 (v3d), renderD128, renderD129
-```
+### Quick recovery after a Hyprland session
 
-If only `card0` exists, your kernel device tree is missing `dtoverlay=vc4-kms-v3d-pi5` in `/boot/firmware/config.txt`.
+If you change anything in `~/.config/uwsm/env-hyprland.d/`, log fully out of Hyprland and back in (or reboot). Hyprland's own `hyprctl reload` does **not** pick up renderer env changes — they're only read when Hyprland is exec'd.
 
 ## Keeping binaries up to date
 
