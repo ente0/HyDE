@@ -10,6 +10,12 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/hydevm"
 BASE_IMAGE="$CACHE_DIR/archbase.qcow2"
 SNAPSHOTS_DIR="$CACHE_DIR/snapshots"
 HYDE_REPO="https://github.com/HyDE-Project/HyDE.git"
+
+# Host architecture detection.
+# Maps `uname -m` to the QEMU system suffix (e.g. x86_64 → qemu-system-x86_64,
+# aarch64 → qemu-system-aarch64). Override with HYDEVM_ARCH=<arch> if needed.
+HYDEVM_ARCH="${HYDEVM_ARCH:-$(uname -m)}"
+QEMU_BIN="qemu-system-${HYDEVM_ARCH}"
 # Required packages for Arch Linux
 ARCH_PACKAGES=(
     "qemu-desktop"
@@ -111,7 +117,7 @@ function check_nixos_dependencies() {
     local missing_commands=()
 
     # Check for required commands
-    for cmd in qemu-system-x86_64 curl python git; do
+    for cmd in ${QEMU_BIN} curl python git; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             missing_commands+=("$cmd")
         fi
@@ -223,8 +229,8 @@ function check_deps_only() {
         echo "   Memory: $(free -h | awk '/^Mem:/ {print $2}' 2>/dev/null || echo "Unknown")"
         echo "   KVM available: $([ -r /dev/kvm ] && echo "Yes" || echo "No")"
 
-        if command -v qemu-system-x86_64 >/dev/null 2>&1; then
-            echo "   QEMU version: $(qemu-system-x86_64 --version | head -1)"
+        if command -v ${QEMU_BIN} >/dev/null 2>&1; then
+            echo "   QEMU version: $(${QEMU_BIN} --version | head -1)"
         fi
 
         return 0
@@ -234,15 +240,15 @@ function check_deps_only() {
 }
 
 function get_qemu_command() {
-    # Try to find qemu-system-x86_64 in common locations
-    if command -v qemu-system-x86_64 >/dev/null 2>&1; then
-        echo "qemu-system-x86_64"
-    elif [ -x "/usr/bin/qemu-system-x86_64" ]; then
-        echo "/usr/bin/qemu-system-x86_64"
-    elif [ -x "/usr/local/bin/qemu-system-x86_64" ]; then
-        echo "/usr/local/bin/qemu-system-x86_64"
+    # Try to find ${QEMU_BIN} in common locations
+    if command -v ${QEMU_BIN} >/dev/null 2>&1; then
+        echo "${QEMU_BIN}"
+    elif [ -x "/usr/bin/${QEMU_BIN}" ]; then
+        echo "/usr/bin/${QEMU_BIN}"
+    elif [ -x "/usr/local/bin/${QEMU_BIN}" ]; then
+        echo "/usr/local/bin/${QEMU_BIN}"
     else
-        echo "qemu-system-x86_64"  # fallback
+        echo "${QEMU_BIN}"  # fallback
     fi
 }
 
@@ -283,11 +289,28 @@ function run_qemu_vm() {
             -boot "menu=on"
         )
 
+        # aarch64 has no PC machine type; needs virt machine + UEFI firmware.
+        if [[ "$HYDEVM_ARCH" == "aarch64" ]]; then
+            local uefi_fw=""
+            for fw in /usr/share/edk2/aarch64/QEMU_EFI.fd \
+                      /usr/share/AAVMF/AAVMF_CODE.fd \
+                      /usr/share/qemu-efi-aarch64/QEMU_EFI.fd; do
+                [ -f "$fw" ] && uefi_fw="$fw" && break
+            done
+            [ -z "$uefi_fw" ] && { echo "❌ No aarch64 UEFI firmware found. Install edk2-aarch64."; exit 1; }
+            qemu_args+=(-machine virt -bios "$uefi_fw")
+        fi
+
         # Add KVM-specific arguments
         if [ -r /dev/kvm ]; then
             qemu_args+=(-enable-kvm -cpu host)
         else
-            qemu_args+=(-cpu qemu64)
+            # TCG fallback CPU varies by arch.
+            case "$HYDEVM_ARCH" in
+                x86_64)  qemu_args+=(-cpu qemu64) ;;
+                aarch64) qemu_args+=(-cpu cortex-a72) ;;
+                *)       qemu_args+=(-cpu max) ;;
+            esac
         fi
 
         # Add network arguments if extra_args are provided
@@ -308,7 +331,22 @@ function run_qemu_vm() {
 }
 
 function get_latest_arch_image_url() {
-    echo "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-basic.qcow2"
+    # Allow user override regardless of architecture.
+    if [ -n "${HYDEVM_IMAGE_URL:-}" ]; then
+        echo "$HYDEVM_IMAGE_URL"
+        return
+    fi
+    case "$HYDEVM_ARCH" in
+        x86_64)
+            echo "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-basic.qcow2"
+            ;;
+        *)
+            echo "❌ No official Arch Linux cloud image is published for $HYDEVM_ARCH." >&2
+            echo "   Set HYDEVM_IMAGE_URL=<url-to-qcow2> to point at an alternative image" >&2
+            echo "   (e.g. a Fedora/Debian aarch64 qcow2)." >&2
+            exit 1
+            ;;
+    esac
 }
 
 function download_archbox() {
