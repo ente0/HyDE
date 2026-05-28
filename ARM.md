@@ -13,7 +13,7 @@ Tested on: Raspberry Pi 5 (16 GB), Arch Linux ARM, kernel 6.x, Hyprland.
 | `Configs/.local/bin/hyq` | Removed (no upstream aarch64 prebuilt). Build via `Scripts/build_hyq.sh`. |
 | `Scripts/build_hyq.sh` | New. Compiles hyq from source into `~/.local/bin/hyq`. |
 | `Scripts/hydevm/hydevm.sh` | Architecture-aware via `HYDEVM_ARCH` (defaults to `uname -m`). |
-| `Configs/.config/uwsm/env-hyprland.d/01-pi5.sh` | New. Exports `AQ_DRM_DEVICES=/dev/dri/card1`, `WLR_NO_HARDWARE_CURSORS`, `WLR_DRM_NO_ATOMIC`, etc. *before* Hyprland starts. Gated on Broadcom V3D detection. |
+| `~/.config/uwsm/env-hyprland.d/01-pi5.sh` | Deployed by `firstrun_pi5.sh` (not version-controlled — that path is gitignored upstream). Exports `AQ_DRM_DEVICES=/dev/dri/card1`, `WLR_NO_HARDWARE_CURSORS`, `WLR_DRM_NO_ATOMIC`, etc. *before* Hyprland starts. Gated on Broadcom V3D detection. |
 | `Configs/.config/hypr/pi5.conf` | New. Lightweight decorations (no blur, no shadow, simple animations). No `env =` — those don't work for renderer init. |
 | `Configs/.config/hypr/hyprland.conf` | Sources `pi5.conf`. |
 | `Scripts/firstrun_pi5.sh` | New. Idempotent installer: adds `dtoverlay`, joins `video`/`render` groups, deploys `01-pi5.sh` and `pi5.conf` into `~/.config/`. |
@@ -29,7 +29,7 @@ Pi 5 exposes two DRM nodes:
 - `/dev/dri/card0` → VC4 (display controller, **no 3D**)
 - `/dev/dri/card1` → V3D (the actual GL ES renderer)
 
-Aquamarine picks `card0` by default and dies with `Can't create renderer, no matching devices found`. The fix is to export `AQ_DRM_DEVICES=/dev/dri/card1` **before Hyprland starts** — Hyprland's own `env =` directive runs *after* the renderer has already initialised and is therefore useless for this. We do it in [Configs/.config/uwsm/env-hyprland.d/01-pi5.sh](Configs/.config/uwsm/env-hyprland.d/01-pi5.sh), which uwsm sources before exec'ing Hyprland.
+Aquamarine picks `card0` by default and dies with `Can't create renderer, no matching devices found`. The fix is to export `AQ_DRM_DEVICES=/dev/dri/card1` **before Hyprland starts** — Hyprland's own `env =` directive runs *after* the renderer has already initialised and is therefore useless for this. `Scripts/firstrun_pi5.sh` writes the right exports into `~/.config/uwsm/env-hyprland.d/01-pi5.sh`, which uwsm sources before exec'ing Hyprland.
 
 ### What we disable on Pi 5
 
